@@ -1,6 +1,6 @@
 # egkong
 [![PkgGoDev](https://pkg.go.dev/badge/github.com/matthewdunsdon/egkong)](https://pkg.go.dev/github.com/matthewdunsdon/egkong)
-![Buil](https://github.com/matthewdunsdon/egcmd/workflows/build/badge.svg)
+![Build go](https://github.com/matthewdunsdon/egkong/workflows/Build%20go/badge.svg)
 [![Coverage Status](https://coveralls.io/repos/github/matthewdunsdon/egkong/badge.svg?branch=master)](https://coveralls.io/github/matthewdunsdon/egkong?branch=master)
 [![Go Report Card](https://goreportcard.com/badge/github.com/matthewdunsdon/egkong)](https://goreportcard.com/report/github.com/matthewdunsdon/egkong)
 
