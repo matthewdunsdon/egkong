@@ -2,21 +2,28 @@ package egkong
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/alecthomas/kong"
-
-	"github.com/matthewdunsdon/egcmd"
 )
 
-type testExamplesFinder struct {
-	lastCommand string
+type FailoverStringWriter struct {
+	condition string
 }
 
-func (t *testExamplesFinder) Find(command string) (examples egcmd.ExamplesFound) {
-	t.lastCommand = command
+func (fsw FailoverStringWriter) WriteString(s string) (n int, err error) {
+	n = len(s)
+	if s == fsw.condition {
+		err = errors.New("Test failover condition met")
+	}
+	return
+}
+
+func (fsw FailoverStringWriter) Write(p []byte) (n int, err error) {
+	n = len(p)
 	return
 }
 
@@ -30,16 +37,16 @@ var cli struct {
 
 	Config struct {
 		Snapshot struct {
-			Name string `arg`
-		} `cmd`
-	} `cmd`
+			Name string `arg:"name"`
+		} `cmd:"snapshot"`
+	} `cmd:"config"`
 }
 
 func TestNew(t *testing.T) {
 	os.Args[0] = "os-app-name"
 	var (
-		parser, appExamples = New(&cli)
-		expectedName        = "os-app-name"
+		parser, appExamples, _ = New(&cli)
+		expectedName           = "os-app-name"
 	)
 
 	if got := parser.Model.Name; expectedName != got {
@@ -53,8 +60,29 @@ func TestNew(t *testing.T) {
 
 func TestNewWithNameOptionSpecified(t *testing.T) {
 	var (
-		parser, appExamples = New(&cli, kong.Name("app-name"))
-		expectedName        = "app-name"
+		parser, appExamples, _ = New(&cli, kong.Name("app-name"))
+		expectedName           = "app-name"
+	)
+
+	if got := parser.Model.Name; expectedName != got {
+		t.Errorf("Expected app name to be %q, got %q", expectedName, got)
+	}
+
+	if got := appExamples.Find("").Context; expectedName != got {
+		t.Errorf("Expected app examples name to be %q, got %q", expectedName, got)
+	}
+}
+
+func TestNewWithKongErrorWillPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("The code did not panic")
+		}
+	}()
+
+	var (
+		parser, appExamples, _ = New(cli, kong.Name("app-name"))
+		expectedName           = "app-name"
 	)
 
 	if got := parser.Model.Name; expectedName != got {
@@ -97,13 +125,26 @@ func TestGetCommand(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.testName, func(t *testing.T) {
-			helpWasCalled, _, _ := parseWithHelpPrinter(tc.args, func(o kong.HelpOptions, ctx *kong.Context) (err error) {
-				actual := getCommand(ctx)
-				if got := actual; tc.want != got {
-					t.Errorf("Expected getCommand to return %#v, got %#v", tc.want, actual)
-				}
-				return nil
-			})
+			helpWasCalled := false
+
+			parser, _ := kong.New(&cli,
+				kong.Name("app-name"),
+				kong.Exit(func(res int) {}),
+				kong.Help(func(o kong.HelpOptions, ctx *kong.Context) error {
+					helpWasCalled = true
+
+					actual := getCommand(ctx)
+					if got := actual; tc.want != got {
+						t.Errorf("Expected getCommand to return %#v, got %#v", tc.want, actual)
+					}
+					return nil
+				}),
+			)
+
+			_, err := parser.Parse(tc.args)
+			if err != nil {
+				_ = err.Error()
+			}
 
 			if !helpWasCalled {
 				t.Errorf("Expected help function to be called")
@@ -113,13 +154,6 @@ func TestGetCommand(t *testing.T) {
 }
 
 func TestHelpPrinter(t *testing.T) {
-	examples := egcmd.New("app-name")
-	examples.Example("init", "Ius legimus nonumes te, pri dicat nominavi copiosae id, odio rebum facilis ea pro.")
-	examples.Example("config snapshot odio", "At vis primis debitis, ei verear omittantur.")
-	examples.Command("version").Example("--json", "At vis primis debitis, ei verear omittantur.")
-	examples.Command("config").Example("snapshot odio", "At vis primis debitis, ei verear omittantur.")
-	examples.Command("config snapshot").Example("odio", "At vis primis debitis, ei verear omittantur.")
-
 	testCases := []struct {
 		testName     string
 		args         []string
@@ -154,14 +188,30 @@ func TestHelpPrinter(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.testName, func(t *testing.T) {
+			var stdoutWriter, stderrWriter bytes.Buffer
+			var exit *int
+			parser, examples, _ := New(&cli,
+				kong.Name("app-name"),
+				kong.Exit(func(res int) {
+					exit = &res
+				}),
+				kong.Writers(&stdoutWriter, &stderrWriter),
+			)
+			examples.Example("init", "Ius legimus nonumes te, pri dicat nominavi copiosae id, odio rebum facilis ea pro.")
+			examples.Example("config snapshot odio", "At vis primis debitis, ei verear omittantur.")
+			examples.Command("version").Example("--json", "At vis primis debitis, ei verear omittantur.")
+			examples.Command("config").Example("snapshot odio", "At vis primis debitis, ei verear omittantur.")
+			examples.Command("config snapshot").Example("odio", "At vis primis debitis, ei verear omittantur.")
 
-			helpWasCalled, stdout, stderr := parseWithHelpPrinter(tc.args, func(o kong.HelpOptions, ctx *kong.Context) (err error) {
-				err = helpPrinter(examples, o, ctx)
-				return
-			})
+			_, err := parser.Parse(tc.args)
+			if err != nil {
+				_ = err.Error()
+			}
+			stdout := stdoutWriter.String()
+			stderr := stderrWriter.String()
 
-			if !helpWasCalled {
-				t.Errorf("Expected help function to be called")
+			if exit == nil {
+				t.Errorf("Expected exit function to be called")
 			}
 
 			examplesFound := strings.Contains(stdout, "\n\nExamples:\n")
@@ -179,30 +229,32 @@ func TestHelpPrinter(t *testing.T) {
 				t.Errorf("Expected stdout not to have examples, got %q", stdout)
 			}
 
-			if got := stderr; "" != got {
+			if got := stderr; got != "" {
 				t.Errorf("Expected stderr output to be empty, got %q", got)
 			}
 		})
 	}
 }
 
-func parseWithHelpPrinter(args []string, help kong.HelpPrinter) (helpWasCalled bool, stdout, stderr string) {
-	var stdoutWriter, stderrWriter bytes.Buffer
-
-	helpWasCalled = false
-	parser, _ := kong.New(&cli,
+func TestHelpPrinterError(t *testing.T) {
+	stdoutWriter := FailoverStringWriter{
+		condition: "Examples:\n",
+	}
+	var stderrWriter bytes.Buffer
+	parser, examples, _ := New(&cli,
 		kong.Name("app-name"),
 		kong.Exit(func(res int) {}),
 		kong.Writers(&stdoutWriter, &stderrWriter),
-		kong.Help(func(o kong.HelpOptions, ctx *kong.Context) error {
-			helpWasCalled = true
-			return help(o, ctx)
-		}),
 	)
+	examples.Example("init", "Ius legimus nonumes te, pri dicat nominavi copiosae id, odio rebum facilis ea pro.")
 
-	parser.Parse(args)
-	stdout = stdoutWriter.String()
-	stderr = stderrWriter.String()
+	_, err := parser.Parse([]string{"--help"})
+	if err == nil {
+		t.Errorf("Expected err to be returned")
+		return
+	}
 
-	return
+	if got := err.Error(); got != "Test failover condition met" {
+		t.Errorf("io write error not propagated, got %q", got)
+	}
 }
