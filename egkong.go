@@ -23,12 +23,20 @@ func helpPrinter(finder ExamplesFinder, options kong.HelpOptions, ctx *kong.Cont
 		return
 	}
 
-	_, err = io.WriteString(ctx.Stdout, "\nExamples:\n")
+	lines := []string{"", "Examples:"}
+
 	for i, ex := range examples.Examples {
-		_, err = io.WriteString(ctx.Stdout, "  "+ex.Cli(examples.Context)+"\n")
-		_, err = io.WriteString(ctx.Stdout, "    "+ex.Description+"\n")
+		lines = append(lines, "  "+ex.Cli(examples.Context))
+		lines = append(lines, "    "+ex.Description)
 		if i < len(examples.Examples)-1 {
-			_, err = io.WriteString(ctx.Stdout, "\n")
+			lines = append(lines, "")
+		}
+	}
+
+	for _, line := range lines {
+		_, err := io.WriteString(ctx.Stdout, line+"\n")
+		if err != nil {
+			return err
 		}
 	}
 	return err
@@ -46,15 +54,12 @@ func getCommand(ctx *kong.Context) (command string) {
 
 // New creates both kong and egcmd application, which have the help printer
 // configured so that examples are shown.
-func New(cli interface{}, options ...kong.Option) (parser *kong.Kong, appExamples *egcmd.App) {
+func New(cli interface{}, options ...kong.Option) (parser *kong.Kong, appExamples *egcmd.App, err error) {
 	options = append(options,
 		kong.Help(func(o kong.HelpOptions, ctx *kong.Context) (err error) { return helpPrinter(appExamples, o, ctx) }),
 	)
-	parser, err := kong.New(cli, options...)
+	parser, err = kong.New(cli, options...)
 	appExamples = egcmd.New(parser.Model.Name)
 
-	if err != nil {
-		panic(err)
-	}
 	return
 }
