@@ -47,6 +47,8 @@ func getCommand(ctx *kong.Context) (command string) {
 
 	selected := ctx.Selected()
 	if selected != nil {
+		examples := selected.Tag.GetAll("examples")
+		_ = examples
 		command = strings.Replace(selected.FullPath(), ctx.Model.Name+" ", "", 1)
 	}
 	return

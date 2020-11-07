@@ -29,17 +29,17 @@ func (fsw FailoverStringWriter) Write(p []byte) (n int, err error) {
 
 var cli struct {
 	Init struct {
-	} `cmd:"init" help:"Initialise app data."`
+	} `cmd:"init" help:"Initialise app data." examples:"aa" examples:"aa2"`
 
 	Version struct {
-		JSON bool `help:"Get version details in json format."`
-	} `cmd:"version" help:"Get application version details."`
+		JSON bool `help:"Get version details in json format." examples:"bb" examples:"bb2"`
+	} `cmd:"version" help:"Get application version details." examples:"cc" examples:"cc2"`
 
 	Config struct {
 		Snapshot struct {
-			Name string `arg:"name"`
-		} `cmd:"snapshot"`
-	} `cmd:"config"`
+			Name string `arg:"name" examples:"dd" examples:"dd2"`
+		} `cmd:"snapshot" examples:"ee" examples:"ee2"`
+	} `cmd:"config" examples:"ff" examples:"ff2"`
 }
 
 func TestNew(t *testing.T) {
